@@ -1,0 +1,105 @@
+version: "3"
+
+services:
+  container_name: "modullo_mysql"
+    build:
+      context: ./mysql/
+    command: --default-authentication-plugin=mysql_native_password
+    restart: unless-stopped
+    # tty: true
+    ports:
+      - "18005:3306"
+    volumes:
+      - modullo_databases:/var/lib/mysql
+    environment:
+      - MYSQL_ROOT_PASSWORD=root
+      - VIRTUAL_HOST=mysql.modullohub.test
+      - SERVICE_NAME=modullo_mysql
+    networks:
+      - modullo
+
+
+   service_proxy:
+    container_name: "service_proxy"
+    image: jwilder/nginx-proxy
+    ports:
+      - "18030:80"
+    volumes:
+      - /var/run/docker.sock:/tmp/docker.sock:ro
+    networks:
+      - modullo
+  modullo_core_php:
+    container_name: "modullo_core_php"
+    image: "modullo/core:latest"
+    restart: unless-stopped
+    tty: true
+    environment:
+      SERVICE_NAME: "modullo_core_php"
+      SERVICE_TAGS: dev
+    working_dir: "/var/www/modullo-core"
+    env_file: "./app/envs/core.env"
+    volumes:
+      - "./app/envs/core.env:/var/www/modullo-core/.env"
+      - "./app/local.ini:/usr/local/etc/php/conf.d/local.ini"
+    depends_on:
+      - modullo_sql
+    networks:
+      - modullo
+  modullo_core_web:
+    container_name: "modullo_core_web"
+    build:
+      context: ./nginx/core
+    restart: unless-stopped
+    tty: true
+    ports:
+      - "18032:80"
+    depends_on:
+      - modullo_core_php
+    networks:
+      - modullo
+    environment:
+      - VIRTUAL_HOST=core.modullo.test
+      - SERVICE_CORE_PHP_NAME=modullo_core_php
+  modullo_hub_php:
+    container_name: "modullo_hub_php"
+    image: "modullo/hub:latest"
+    restart: unless-stopped
+    tty: true
+    environment:
+      SERVICE_NAME: "modullo_hub_php"
+      SERVICE_TAGS: dev
+    working_dir: "/var/www/modullo-hub"
+    env_file: "./app/envs/hub.env"
+    volumes:
+      - "./app/envs/hub.env:/var/www/modullo-hub/.env"
+      - "./app/local.ini:/usr/local/etc/php/conf.d/local.ini"
+    depends_on:
+      - modullo_sql
+    networks:
+      - modullo
+
+  modullo_hub_web:
+    container_name: "modullo_hub_web"
+    build:
+      context: ./nginx/hub
+    restart: unless-stopped
+    tty: true
+    ports:
+      - "18034:80"
+    depends_on:
+      - modullo_hub_php
+      - modullo_core_web
+    networks:
+      - modullo
+    environment:
+      - VIRTUAL_HOST=modullo-hub.test
+      - SERVICE_HUB_PHP_NAME=modullo_core_web
+
+volumes:
+  modullo_databases:
+    driver: local
+
+networks:
+  modullo:
+    name: modullo
+    driver: bridge
